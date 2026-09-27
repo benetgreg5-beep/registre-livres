@@ -1,0 +1,11 @@
+{
+  "name": "Le Registre",
+  "short_name": "Registre",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f2ede2",
+  "theme_color": "#20262b",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
