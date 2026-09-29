@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Le Registre</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#20262b">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  :root{
+    --ink:#20262b; --paper:#f2ede2; --paper-2:#e8e0d0;
+    --brass:#9c7a3f; --brass-dark:#7a5f30; --red:#8a3a30; --line:#c9bda3; --card:#faf7ef;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:-apple-system,'Segoe UI',sans-serif;min-height:100vh;}
+  header{padding:1.8rem 1.2rem 1.2rem;border-bottom:2px solid var(--ink);}
+  header h1{font-size:1.7rem;margin:0 0 .3rem;}
+  header p{margin:0;color:var(--brass-dark);font-size:.85rem;}
+  main{max-width:820px;margin:0 auto;padding:1.2rem;}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1.1rem;margin-bottom:1.2rem;}
+  .row{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:.6rem;}
+  .field{flex:1 1 150px;display:flex;flex-direction:column;gap:.25rem;}
+  label{font-size:.7rem;color:var(--brass-dark);}
+  input{background:var(--paper);border:1px solid var(--line);color:var(--ink);padding:.55rem .6rem;font-size:.9rem;border-radius:4px;}
+  .isbn-row{display:flex;gap:.5rem;}
+  .isbn-row input{flex:1;}
+  button{cursor:pointer;border-radius:4px;font-family:inherit;}
+  .btn-scan, .btn-add{background:var(--ink);color:var(--paper);border:none;padding:.6rem 1rem;font-size:.85rem;}
+  .btn-scan{background:var(--brass);}
+  .btn-scan:hover{background:var(--brass-dark);}
+  .btn-add:hover{opacity:.85;}
+  .empty{text-align:center;padding:2rem 1rem;color:var(--brass-dark);border:1px dashed var(--line);border-radius:6px;}
+  .book{border:1px solid var(--line);border-radius:6px;margin-bottom:1rem;overflow:hidden;}
+  .book-head{display:flex;justify-content:space-between;gap:1rem;padding:.8rem 1rem;background:var(--paper-2);border-bottom:1px solid var(--line);}
+  .book-head h3{font-size:1rem;margin:0 0 .1rem;}
+  .book-head .meta{font-size:.72rem;color:var(--brass-dark);}
+  .del{background:none;border:1px solid var(--line);color:var(--red);font-size:.7rem;padding:.3rem .5rem;height:fit-content;}
+  .links{display:flex;flex-wrap:wrap;gap:.45rem;padding:.7rem 1rem;}
+  .links a{font-size:.72rem;text-decoration:none;color:var(--ink);border:1px solid var(--line);padding:.3rem .6rem;border-radius:4px;}
+  .links a:hover{border-color:var(--brass);}
+  .table-wrap{overflow-x:auto;border-top:1px solid var(--line);}
+  table{width:100%;border-collapse:collapse;font-size:.8rem;}
+  th,td{padding:.45rem .7rem;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th{color:var(--brass-dark);font-weight:500;font-size:.66rem;}
+  td input{width:75px;padding:.3rem;}
+  .best{color:var(--red);font-weight:700;}
+  .note{font-size:.72rem;color:var(--brass-dark);padding:0 1rem .8rem;}
+  footer{text-align:center;padding:1.4rem;font-size:.7rem;color:var(--brass-dark);}
+
+  .scan-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:50;align-items:center;justify-content:center;padding:1rem;}
+  .scan-overlay.open{display:flex;}
+  .scan-box{background:var(--card);border-radius:8px;overflow:hidden;width:100%;max-width:480px;}
+  .scan-head{display:flex;justify-content:space-between;align-items:center;padding:.8rem 1rem;font-size:.85rem;border-bottom:1px solid var(--line);}
+  .scan-head button{background:none;border:none;font-size:1.1rem;}
+  #scan-video{width:100%;display:block;background:#000;aspect-ratio:4/3;object-fit:cover;}
+  .scan-msg{padding:.8rem 1rem;font-size:.75rem;color:var(--brass-dark);text-align:center;}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📚 Le Registre</h1>
+  <p>Scanne l'ISBN, ouvre la recherche sur chaque plateforme, note les prix trouvés.</p>
+</header>
+
+<main>
+  <section class="panel">
+    <div class="row">
+      <div class="field">
+        <label for="f-title">titre</label>
+        <input id="f-title" type="text" placeholder="Le Comte de Monte-Cristo">
+      </div>
+      <div class="field">
+        <label for="f-author">auteur</label>
+        <input id="f-author" type="text" placeholder="Alexandre Dumas">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="f-isbn">isbn</label>
+        <div class="isbn-row">
+          <input id="f-isbn" type="text" inputmode="numeric" placeholder="9782253097337">
+          <button class="btn-scan" id="btn-scan" type="button">📷 Scanner</button>
+        </div>
+      </div>
+      <button class="btn-add" id="btn-add">Ajouter</button>
+    </div>
+  </section>
+
+  <section id="list"></section>
+</main>
+
+<footer>Les prix restent à relever toi-même — aucune plateforme n'autorise l'interrogation automatique de ses prix.</footer>
+
+<div class="scan-overlay" id="scan-overlay">
+  <div class="scan-box">
+    <div class="scan-head">
+      <span>Vise le code-barres</span>
+      <button id="scan-close">✕</button>
+    </div>
+    <video id="scan-video" playsinline muted></video>
+    <div class="scan-msg" id="scan-msg">Ouverture de la caméra…</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js"></script>
+<script>
+const PLATFORMS = [
+  {name:'Momox (prix immédiat)', build:(q, isbn)=> isbn ? `https://www.momox.fr/offer/${isbn}` : `https://www.momox.fr/vendre?q=${q}`},
+  {name:'Bourse aux Livres (vendre)', build:(q)=>`https://labourseauxlivres.fr/pages/vendre-ses-livres`},
+  {name:'Ammareal (vendre)', build:(q)=>`https://www.ammareal.fr/reprendre-vos-livres`},
+  {name:'Recyclivre (vendre)', build:(q)=>`https://www.recyclivre.com`},
+  {name:'La Bouquinerie', build:(q)=>`https://www.google.com/search?q=la+bouquinerie+vendre+livres+${q}`},
+  {name:'Gibert', build:(q)=>`https://www.gibert.com/recherche?controller=search&s=${q}`},
+  {name:'Cultura', build:(q)=>`https://www.cultura.com/search?q=${q}`},
+];
+const KEY = 'registre-livres';
+let books = [];
+
+function load(){
+  try{ books = JSON.parse(localStorage.getItem(KEY) || '[]'); }catch(e){ books = []; }
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(books)); }catch(e){} }
+function query(b){ return encodeURIComponent(b.isbn ? b.isbn : `${b.title} ${b.author}`.trim()); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function render(){
+  const list = document.getElementById('list');
+  if(books.length === 0){
+    list.innerHTML = '<div class="empty">Aucun livre pour l\'instant. Scanne ou ajoute le premier ci-dessus.</div>';
+    return;
+  }
+  list.innerHTML = books.map((b, i) => {
+    const q = query(b);
+    const links = PLATFORMS.map(p => `<a href="${p.build(q, b.isbn)}" target="_blank" rel="noopener">${p.name}</a>`).join('');
+    const prices = b.prices || {};
+    const nums = PLATFORMS.map(p => parseFloat(prices[p.name])).filter(n => !isNaN(n));
+    const best = nums.length ? Math.max(...nums) : null;
+    const rows = PLATFORMS.map(p => {
+      const val = prices[p.name] || '';
+      const isBest = best !== null && parseFloat(val) === best;
+      return `<td><input data-book="${i}" data-platform="${p.name}" type="number" step="0.01" min="0" placeholder="€" value="${val}" class="${isBest ? 'best' : ''}"></td>`;
+    }).join('');
+    return `
+      <div class="book">
+        <div class="book-head">
+          <div>
+            <h3>${escapeHtml(b.title || 'Sans titre')}</h3>
+            <div class="meta">${escapeHtml(b.author || '')}${b.author && b.isbn ? ' · ' : ''}${escapeHtml(b.isbn || '')}</div>
+          </div>
+          <button class="del" data-del="${i}">retirer</button>
+        </div>
+        <div class="links">${links}</div>
+        <div class="note">Momox affiche son prix de rachat directement. Les autres demandent leur appli pour vendre — reporte ici le prix vu, le meilleur se surligne.</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>${PLATFORMS.map(p=>`<th>${p.name}</th>`).join('')}</tr></thead>
+            <tbody><tr>${rows}</tr></tbody>
+          </table>
+        </div>
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', () => { books.splice(parseInt(btn.dataset.del), 1); save(); render(); });
+  });
+  list.querySelectorAll('input[data-platform]').forEach(inp => {
+    inp.addEventListener('change', () => {
+      const bi = parseInt(inp.dataset.book);
+      books[bi].prices = books[bi].prices || {};
+      books[bi].prices[inp.dataset.platform] = inp.value;
+      save(); render();
+    });
+  });
+}
+
+document.getElementById('f-isbn').addEventListener('change', () => {
+  const v = document.getElementById('f-isbn').value.trim();
+  if(v) fetchBookInfo(v);
+});
+
+document.getElementById('btn-add').addEventListener('click', () => {
+  const title = document.getElementById('f-title').value.trim();
+  const author = document.getElementById('f-author').value.trim();
+  const isbn = document.getElementById('f-isbn').value.trim();
+  if(!title && !isbn) return;
+  books.push({title, author, isbn, prices:{}});
+  save(); render();
+  document.getElementById('f-title').value = '';
+  document.getElementById('f-author').value = '';
+  document.getElementById('f-isbn').value = '';
+});
+
+load();
+render();
+
+async function fetchBookInfo(isbn){
+  const titleField = document.getElementById('f-title');
+  const authorField = document.getElementById('f-author');
+  const cleanIsbn = isbn.replace(/[^0-9Xx]/g, '');
+  titleField.placeholder = 'Recherche du titre…';
+  try{
+    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${cleanIsbn}`);
+    const data = await res.json();
+    if(data.items && data.items.length > 0){
+      const info = data.items[0].volumeInfo;
+      if(!titleField.value) titleField.value = info.title || '';
+      if(!authorField.value) authorField.value = (info.authors || []).join(', ');
+    } else {
+      titleField.placeholder = 'Titre non trouvé, saisis-le à la main';
+    }
+  }catch(e){
+    titleField.placeholder = 'Recherche impossible (connexion), saisis le titre à la main';
+  }
+}
+
+// --- Scan caméra réel : API native du téléphone en priorité, repli sur ZXing ---
+let zxingReader = null;
+let scanStream = null;
+let scanActive = false;
+
+async function openScanner(){
+  const overlay = document.getElementById('scan-overlay');
+  const video = document.getElementById('scan-video');
+  const msg = document.getElementById('scan-msg');
+  overlay.classList.add('open');
+  msg.textContent = 'Ouverture de la caméra…';
+
+  try{
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
+    });
+    video.srcObject = scanStream;
+    await video.play();
+  }catch(e){
+    msg.textContent = "Caméra refusée ou indisponible. Autorise l'accès caméra dans les réglages de ton navigateur.";
+    return;
+  }
+
+  if('BarcodeDetector' in window){
+    try{
+      const formats = await BarcodeDetector.getSupportedFormats();
+      const useFormats = ['ean_13','ean_8','upc_a','upc_e','code_128'].filter(f => formats.includes(f));
+      const detector = new BarcodeDetector({ formats: useFormats.length ? useFormats : formats });
+      msg.textContent = 'Cadre le code-barres, bien éclairé.';
+      scanActive = true;
+      nativeScanLoop(detector, video, msg);
+      return;
+    }catch(e){ /* repli ci-dessous */ }
+  }
+  startZXingFallback(video, msg);
+}
+
+function nativeScanLoop(detector, video, msg){
+  async function tick(){
+    if(!scanActive) return;
+    try{
+      const codes = await detector.detect(video);
+      if(codes.length > 0){
+        document.getElementById('f-isbn').value = codes[0].rawValue;
+        fetchBookInfo(codes[0].rawValue);
+        closeScanner();
+        return;
+      }
+    }catch(e){}
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+function startZXingFallback(video, msg){
+  if(typeof ZXing === 'undefined'){
+    msg.textContent = "Le lecteur n'a pas pu se charger (vérifie ta connexion internet).";
+    return;
+  }
+  try{
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128
+    ]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    zxingReader = new ZXing.BrowserMultiFormatReader(hints, 200);
+    msg.textContent = 'Cadre le code-barres, bien éclairé.';
+    zxingReader.decodeFromVideoElement(video, (result) => {
+      if(result){
+        document.getElementById('f-isbn').value = result.getText();
+        fetchBookInfo(result.getText());
+        closeScanner();
+      }
+    });
+  }catch(e){
+    msg.textContent = "Le scan n'est pas disponible sur cet appareil.";
+  }
+}
+
+function closeScanner(){
+  document.getElementById('scan-overlay').classList.remove('open');
+  scanActive = false;
+  if(zxingReader){ try{ zxingReader.reset(); }catch(e){} zxingReader = null; }
+  if(scanStream){ scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
+}
+document.getElementById('btn-scan').addEventListener('click', openScanner);
+document.getElementById('scan-close').addEventListener('click', closeScanner);
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  });
+}
+</script>
+</body>
+</html>
