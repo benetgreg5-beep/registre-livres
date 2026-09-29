@@ -50,7 +50,7 @@
 
   .scan-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:50;align-items:center;justify-content:center;padding:1rem;}
   .scan-overlay.open{display:flex;}
-  .scan-box{background:var(--card);border-radius:8px;overflow:hidden;width:100%;max-width:420px;}
+  .scan-box{background:var(--card);border-radius:8px;overflow:hidden;width:100%;max-width:480px;}
   .scan-head{display:flex;justify-content:space-between;align-items:center;padding:.8rem 1rem;font-size:.85rem;border-bottom:1px solid var(--line);}
   .scan-head button{background:none;border:none;font-size:1.1rem;}
   #scan-video{width:100%;display:block;background:#000;aspect-ratio:4/3;object-fit:cover;}
@@ -107,13 +107,13 @@
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script>
 const PLATFORMS = [
-  {name:'Vinted', build:(q)=>`https://www.vinted.fr/catalog?search_text=${q}`},
-  {name:'Leboncoin', build:(q)=>`https://www.leboncoin.fr/recherche?text=${q}`},
-  {name:'Amazon', build:(q)=>`https://www.amazon.fr/s?k=${q}`},
-  {name:'Rakuten', build:(q)=>`https://fr.shopping.rakuten.com/search/${q}`},
   {name:'Momox', build:(q)=>`https://www.momox.fr/vendre?q=${q}`},
-  {name:'eBay', build:(q)=>`https://www.ebay.fr/sch/i.html?_nkw=${q}`},
-  {name:'AbeBooks', build:(q)=>`https://www.abebooks.fr/servlet/SearchResults?kn=${q}`},
+  {name:'Bourse aux Livres', build:(q)=>`https://labourseauxlivres.fr/search?q=${q}`},
+  {name:'Ammareal', build:(q)=>`https://www.ammareal.fr/recherche?controller=search&s=${q}`},
+  {name:'Recyclivre', build:(q)=>`https://www.google.com/search?q=site:recyclivre.com+${q}`},
+  {name:'La Bouquinerie', build:(q)=>`https://www.google.com/search?q=la+bouquinerie+${q}`},
+  {name:'Gibert', build:(q)=>`https://www.gibert.com/recherche?controller=search&s=${q}`},
+  {name:'Cultura', build:(q)=>`https://www.cultura.com/search?q=${q}`},
 ];
 const KEY = 'registre-livres';
 let books = [];
@@ -190,39 +190,94 @@ document.getElementById('btn-add').addEventListener('click', () => {
 load();
 render();
 
-// --- Scan caméra réel (fonctionne car app auto-hébergée, hors bac à sable) ---
+// --- Scan caméra réel : API native du téléphone en priorité, repli sur ZXing ---
 let zxingReader = null;
+let scanStream = null;
+let scanActive = false;
 
-function openScanner(){
+async function openScanner(){
   const overlay = document.getElementById('scan-overlay');
+  const video = document.getElementById('scan-video');
   const msg = document.getElementById('scan-msg');
   overlay.classList.add('open');
   msg.textContent = 'Ouverture de la caméra…';
 
+  try{
+    scanStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 }
+      }
+    });
+    video.srcObject = scanStream;
+    await video.play();
+  }catch(e){
+    msg.textContent = "Caméra refusée ou indisponible. Autorise l'accès caméra dans les réglages de ton navigateur.";
+    return;
+  }
+
+  if('BarcodeDetector' in window){
+    try{
+      const formats = await BarcodeDetector.getSupportedFormats();
+      const useFormats = ['ean_13','ean_8','upc_a','upc_e','code_128'].filter(f => formats.includes(f));
+      const detector = new BarcodeDetector({ formats: useFormats.length ? useFormats : formats });
+      msg.textContent = 'Cadre le code-barres, bien éclairé.';
+      scanActive = true;
+      nativeScanLoop(detector, video, msg);
+      return;
+    }catch(e){ /* repli ci-dessous */ }
+  }
+  startZXingFallback(video, msg);
+}
+
+function nativeScanLoop(detector, video, msg){
+  async function tick(){
+    if(!scanActive) return;
+    try{
+      const codes = await detector.detect(video);
+      if(codes.length > 0){
+        document.getElementById('f-isbn').value = codes[0].rawValue;
+        closeScanner();
+        return;
+      }
+    }catch(e){}
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+function startZXingFallback(video, msg){
   if(typeof ZXing === 'undefined'){
     msg.textContent = "Le lecteur n'a pas pu se charger (vérifie ta connexion internet).";
     return;
   }
   try{
-    zxingReader = new ZXing.BrowserMultiFormatReader();
-    zxingReader.decodeFromConstraints(
-      { video: { facingMode: { ideal: 'environment' } } },
-      'scan-video',
-      (result) => {
-        if(result){
-          document.getElementById('f-isbn').value = result.getText();
-          closeScanner();
-        }
+    const hints = new Map();
+    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+      ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+      ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E,
+      ZXing.BarcodeFormat.CODE_128
+    ]);
+    hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    zxingReader = new ZXing.BrowserMultiFormatReader(hints, 200);
+    msg.textContent = 'Cadre le code-barres, bien éclairé.';
+    zxingReader.decodeFromVideoElement(video, (result) => {
+      if(result){
+        document.getElementById('f-isbn').value = result.getText();
+        closeScanner();
       }
-    ).then(() => { msg.textContent = 'Cadre le code-barres, bien éclairé.'; })
-     .catch(() => { msg.textContent = "Caméra refusée ou indisponible. Autorise l'accès caméra dans les réglages de ton navigateur."; });
+    });
   }catch(e){
     msg.textContent = "Le scan n'est pas disponible sur cet appareil.";
   }
 }
+
 function closeScanner(){
   document.getElementById('scan-overlay').classList.remove('open');
+  scanActive = false;
   if(zxingReader){ try{ zxingReader.reset(); }catch(e){} zxingReader = null; }
+  if(scanStream){ scanStream.getTracks().forEach(t => t.stop()); scanStream = null; }
 }
 document.getElementById('btn-scan').addEventListener('click', openScanner);
 document.getElementById('scan-close').addEventListener('click', closeScanner);
